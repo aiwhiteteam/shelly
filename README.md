@@ -69,7 +69,7 @@ cargo tauri build    # Production (.dmg)
 ### From DMG
 Download the latest `.dmg` from [Releases](https://github.com/aiwhiteteam/shelly/releases), open it, and drag Shelly to Applications.
 
-> [**Download Shelly (macOS Apple Silicon)**](https://github.com/aiwhiteteam/shelly/releases/latest)
+> [**Download Shelly (macOS Apple Silicon)**](https://github.com/aiwhiteteam/shelly/releases/download/v1.0.0/Shelly_1.0.0_aarch64.dmg)
 
 ---
 
