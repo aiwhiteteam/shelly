@@ -67,7 +67,7 @@ cargo tauri build    # Production (.dmg)
 ```
 
 ### From DMG
-Download the latest `.dmg` from [Releases](https://github.com/anthropics/shelly/releases), open it, and drag Shelly to Applications.
+Download the latest `.dmg` from [Releases](https://github.com/aiwhiteteam/shelly/releases), open it, and drag Shelly to Applications.
 
 ---
 
