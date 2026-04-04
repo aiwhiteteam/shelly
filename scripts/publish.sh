@@ -104,7 +104,7 @@ cat > "$LATEST_JSON" << EOF
   "platforms": {
     "$PLATFORM": {
       "signature": "$SIGNATURE",
-      "url": "https://github.com/anthropics/shelly/releases/download/v$VERSION/Shelly.app.tar.gz"
+      "url": "https://github.com/aiwhiteteam/shelly/releases/download/v$VERSION/Shelly.app.tar.gz"
     }
   }
 }
@@ -130,7 +130,7 @@ Existing installations will update automatically." \
 
 echo ""
 echo "Published Shelly v$VERSION"
-echo "Release: https://github.com/anthropics/shelly/releases/tag/v$VERSION"
+echo "Release: https://github.com/aiwhiteteam/shelly/releases/tag/v$VERSION"
 echo ""
 echo "IMPORTANT: If you build for both architectures, update latest.json"
 echo "to include both darwin-aarch64 and darwin-x86_64 platform entries."

@@ -36,7 +36,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/anthropics/shelly/releases/latest/download/latest.json"
+        "https://github.com/aiwhiteteam/shelly/releases/latest/download/latest.json"
       ],
       "pubkey": "REPLACE_WITH_YOUR_PUBLIC_KEY"
     }
