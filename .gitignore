@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+.tauri-keys/
+*.dmg
+*.app
+*.app.tar.gz
+*.app.tar.gz.sig
+.DS_Store

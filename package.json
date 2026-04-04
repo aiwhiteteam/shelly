@@ -1,0 +1,20 @@
+{
+  "name": "shelly",
+  "version": "1.0.0",
+  "description": "AI agent monitor for macOS — notch-style floating panel",
+  "scripts": {
+    "build:frontend": "esbuild src/renderer/renderer.ts --bundle --outfile=dist/renderer/renderer.js --format=esm --target=es2020 --sourcemap && cp src/renderer/index.html dist/renderer/ && cp src/renderer/styles.css dist/renderer/",
+    "dev": "npm run build:frontend && cargo tauri dev",
+    "build": "npm run build:frontend && cargo tauri build",
+    "tauri": "cargo tauri"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.0"
+  }
+}

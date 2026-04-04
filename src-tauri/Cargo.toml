@@ -1,0 +1,31 @@
+[package]
+name = "shelly"
+version = "1.0.0"
+description = "AI agent monitor for macOS"
+authors = ["you"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.10.3", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-log = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "6"
+ctrlc = "3"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+sysinfo = "0.34"
