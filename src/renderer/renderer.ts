@@ -167,7 +167,7 @@ let yoloMode = false; // yolo mode (auto-approve) off by default
 // Theme: "glass" (default) | "white" | "dark"
 const THEMES = ["glass", "white", "dark"] as const;
 type Theme = typeof THEMES[number];
-let currentTheme: Theme = (localStorage.getItem("shelly-theme") as Theme) || "glass";
+let currentTheme: Theme = (localStorage.getItem("shelly-theme") as Theme) || "dark";
 
 // ─── 8-bit Sound Synthesis ───────────────────────────────────────────
 
