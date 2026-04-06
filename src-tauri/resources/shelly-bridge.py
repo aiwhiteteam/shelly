@@ -73,8 +73,8 @@ def main():
         if isinstance(decision, dict):
             behavior = decision.get("behavior", "allow")
 
-        if behavior == "deny":
-            if agent == "codex-cli":
+        if agent == "codex-cli":
+            if behavior == "deny":
                 print(json.dumps({
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
@@ -82,12 +82,16 @@ def main():
                         "permissionDecisionReason": "Denied by Shelly",
                     }
                 }))
-            elif agent == "gemini-cli":
+            # codex allow = no output, exit 0
+        elif agent == "gemini-cli":
+            # Gemini requires explicit JSON decision on stdout for both allow and deny.
+            if behavior == "deny":
                 print(json.dumps({
-                    "decision": "block",
+                    "decision": "deny",
                     "reason": "Denied by Shelly",
                 }))
-        # allow = no output, exit 0
+            else:
+                print(json.dumps({"decision": "allow"}))
 
     # notification and stop don't need output transformation
 
