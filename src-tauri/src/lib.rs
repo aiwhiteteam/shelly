@@ -21,21 +21,21 @@ fn get_terminals() -> Vec<String> {
 
 #[tauri::command]
 fn jump_to_terminal(terminal_app: String) {
-    sessions::jump_to_terminal(&terminal_app);
+    sessions::jump_to_terminal(&terminal_app, None);
 }
 
 #[tauri::command]
 fn jump_to_session(session_id: String) {
     match sessions::find_terminal_for_session(&session_id) {
-        Some(terminal) => {
-            log::info!("Jumping to terminal '{}' for session {}", terminal, session_id);
-            sessions::jump_to_terminal(&terminal);
+        Some((terminal, tty)) => {
+            log::info!("Jumping to terminal '{}' (tty {:?}) for session {}", terminal, tty, session_id);
+            sessions::jump_to_terminal(&terminal, tty.as_deref());
         }
         None => {
             log::warn!("No terminal found for session {}, falling back to first detected", session_id);
             let terminals = sessions::detect_terminals();
             if let Some(first) = terminals.first() {
-                sessions::jump_to_terminal(first);
+                sessions::jump_to_terminal(first, None);
             }
         }
     }

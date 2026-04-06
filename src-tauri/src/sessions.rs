@@ -119,8 +119,23 @@ unsafe fn nix_kill(pid: i32, sig: i32) -> i32 {
     unsafe { kill(pid, sig) }
 }
 
+/// Get the controlling TTY of a process (e.g. "ttys001"), if any.
+fn tty_of_pid(pid: u32) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-o", "tty=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    let tty = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if tty.is_empty() || tty == "??" || tty == "?" {
+        None
+    } else {
+        Some(tty)
+    }
+}
+
 /// Walk the parent PID chain to find which terminal app a process is running in.
-pub fn find_terminal_for_session(session_id: &str) -> Option<String> {
+/// Returns (terminal name, optional tty of the agent process for tab targeting).
+pub fn find_terminal_for_session(session_id: &str) -> Option<(String, Option<String>)> {
     // Find the PID for this session — try matching session_id, then try as PID filename
     let sessions = scan_all();
     let session = sessions.iter().find(|s| {
@@ -152,6 +167,7 @@ pub fn find_terminal_for_session(session_id: &str) -> Option<String> {
         }
         found_pid?
     };
+    let agent_tty = tty_of_pid(pid);
     let mut pid = pid;
 
     // Known terminal app markers in process paths (lowercase)
@@ -185,7 +201,7 @@ pub fn find_terminal_for_session(session_id: &str) -> Option<String> {
         let lower = line.to_lowercase();
         for (marker, app_name) in markers {
             if lower.contains(marker) {
-                return Some(app_name.to_string());
+                return Some((app_name.to_string(), agent_tty));
             }
         }
 
@@ -219,7 +235,52 @@ pub fn detect_terminals() -> Vec<String> {
     running
 }
 
-pub fn jump_to_terminal(terminal_app: &str) {
+pub fn jump_to_terminal(terminal_app: &str, tty: Option<&str>) {
+    // For tabbed terminals with a known TTY, target the specific tab/session.
+    if let Some(tty) = tty {
+        let tty_path = if tty.starts_with("/dev/") { tty.to_string() } else { format!("/dev/{}", tty) };
+        let script = match terminal_app {
+            "iTerm2" => Some(format!(
+                r#"tell application "iTerm"
+  activate
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        if tty of s is "{}" then
+          select w
+          select t
+          select s
+          return
+        end if
+      end repeat
+    end repeat
+  end repeat
+end tell"#,
+                tty_path
+            )),
+            "Terminal" => Some(format!(
+                r#"tell application "Terminal"
+  activate
+  repeat with w in windows
+    repeat with t in tabs of w
+      if tty of t is "{}" then
+        set selected of t to true
+        set index of w to 1
+        return
+      end if
+    end repeat
+  end repeat
+end tell"#,
+                tty_path
+            )),
+            _ => None,
+        };
+        if let Some(script) = script {
+            let _ = Command::new("osascript").args(["-e", &script]).output();
+            return;
+        }
+    }
+
     // Try activation by bundle ID first (more reliable), fall back to app name
     let activated = match terminal_app {
         "Visual Studio Code" => try_activate_bundle_id("com.microsoft.VSCode"),
