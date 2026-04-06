@@ -211,6 +211,7 @@ body {
   border: 1px solid rgba(220, 38, 38, 0.25);
 }
 .pending-badge.hidden { display: none; }
+.pending-badge:hover { background: rgba(220, 38, 38, 0.25); cursor: pointer; }
 
 .header-btn:active { transform: scale(0.92); }
 .header-btn.active { color: var(--claude); }
@@ -229,6 +230,16 @@ body {
 .badge-permission { background: rgba(217, 119, 11, 0.1); color: var(--opencode); border-color: rgba(217, 119, 11, 0.15); }
 .badge-question { background: rgba(8, 145, 178, 0.1); color: var(--question); border-color: rgba(8, 145, 178, 0.15); }
 .badge-stop { background: rgba(22, 163, 74, 0.1); color: var(--allow); border-color: rgba(22, 163, 74, 0.15); }
+
+.badge-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.badge-row .event-badge { margin-bottom: 0; }
+
+.project-label {
+  font-size: 9px; font-weight: 500; color: var(--text-muted);
+  font-family: "SF Mono", monospace; letter-spacing: 0.3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;
+}
+
 
 .message-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .agent-icon { font-size: 14px; flex-shrink: 0; width: 18px; text-align: center; }
@@ -256,6 +267,26 @@ body {
 
 .btn-deny { background: rgba(220, 38, 38, 0.1); border-color: rgba(220, 38, 38, 0.25); color: var(--deny); }
 .btn-deny:hover { background: rgba(220, 38, 38, 0.2); border-color: rgba(220, 38, 38, 0.5); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(220, 38, 38, 0.2); }
+
+.btn-jump {
+  flex: 0 0 auto; padding: 4px 10px; border-radius: 8px;
+  background: rgba(8, 145, 178, 0.08); border: 1px solid rgba(8, 145, 178, 0.2);
+  color: var(--question); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.3px; gap: 4px;
+  font-family: -apple-system, system-ui, sans-serif;
+  transition: all 0.2s ease;
+}
+.btn-jump:hover {
+  background: rgba(8, 145, 178, 0.16); border-color: rgba(8, 145, 178, 0.4);
+  color: var(--question); transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(8, 145, 178, 0.15);
+}
+.btn-jump .jump-icon { font-size: 11px; }
+.btn-jump-inline { padding: 3px 8px; min-height: 0; }
+
+.question-text-row { display: flex; align-items: flex-start; gap: 8px; }
+.question-text-row .question-text { flex: 1; }
+.question-text-row .btn-jump-inline { flex-shrink: 0; margin-top: 1px; }
 
 /* ─── Idle ───────────────────────────────────────────────────────── */
 

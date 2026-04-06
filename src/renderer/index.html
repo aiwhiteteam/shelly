@@ -26,6 +26,9 @@
         <button id="btn-theme" class="header-btn" data-tooltip="Switch theme">
           <span id="theme-icon">&#9670;</span>
         </button>
+        <button id="btn-yolo" class="header-btn" data-tooltip="Auto-approve all">
+          <span id="yolo-icon">&#9889;&#8416;</span>
+        </button>
         <button id="btn-minimize" class="header-btn" data-tooltip="Ghost mode">
           <span id="ghost-icon">&#128123;&#8416;</span>
         </button>
@@ -52,12 +55,16 @@
         <div class="message-row">
           <span id="notification-icon" class="agent-icon">⚡</span>
           <span id="notification-message" class="message"></span>
+          <button id="btn-jump-notif" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">↗</span></button>
         </div>
       </div>
 
       <!-- Permission view (binary Allow/Deny) -->
       <div id="permission-view" class="view hidden">
-        <div class="event-badge badge-permission">PERMISSION REQUEST</div>
+        <div class="badge-row">
+          <div class="event-badge badge-permission">PERMISSION REQUEST</div>
+          <span id="permission-project" class="project-label"></span>
+        </div>
         <div class="message-row">
           <span id="permission-icon" class="agent-icon">⚡</span>
           <span id="permission-tool" class="message"></span>
@@ -73,13 +80,22 @@
           <button id="btn-deny" class="btn btn-deny" data-tooltip="Deny this action">
             <span class="btn-key">⌘N</span> No
           </button>
+          <button id="btn-jump-perm" class="btn btn-jump" data-tooltip="Switch to terminal">
+            Go to <span class="jump-icon">↗</span>
+          </button>
         </div>
       </div>
 
       <!-- Multi-choice question view (AskUserQuestion) -->
       <div id="question-view" class="view hidden">
-        <div class="event-badge badge-question">QUESTION</div>
-        <div id="question-text" class="question-text"></div>
+        <div class="badge-row">
+          <div class="event-badge badge-question">QUESTION</div>
+          <span id="question-project" class="project-label"></span>
+        </div>
+        <div class="question-text-row">
+          <div id="question-text" class="question-text"></div>
+          <button id="btn-jump-question" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">↗</span></button>
+        </div>
         <div id="question-options" class="question-options"></div>
         <div id="question-input-row" class="question-input-row hidden">
           <input id="question-input" class="question-input" type="text" placeholder="Type your answer...">
@@ -93,6 +109,7 @@
         <div class="message-row">
           <span id="stop-icon" class="agent-icon">⚡</span>
           <span id="stop-message" class="message">Agent finished</span>
+          <button id="btn-jump-stop" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">↗</span></button>
         </div>
       </div>
     </div>

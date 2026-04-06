@@ -40,10 +40,18 @@ const btnAllow = document.getElementById("btn-allow")! as HTMLButtonElement;
 const btnAllowAlways = document.getElementById("btn-allow-always")! as HTMLButtonElement;
 const btnDeny = document.getElementById("btn-deny")! as HTMLButtonElement;
 
+const permissionProject = document.getElementById("permission-project")!;
+const questionProject = document.getElementById("question-project")!;
+const btnJumpPerm = document.getElementById("btn-jump-perm")! as HTMLButtonElement;
+const btnJumpQuestion = document.getElementById("btn-jump-question")! as HTMLButtonElement;
+const btnJumpStop = document.getElementById("btn-jump-stop")! as HTMLButtonElement;
+const btnJumpNotif = document.getElementById("btn-jump-notif")! as HTMLButtonElement;
 const btnMute = document.getElementById("btn-mute")! as HTMLButtonElement;
 const muteIcon = document.getElementById("mute-icon")!;
 const btnTheme = document.getElementById("btn-theme")! as HTMLButtonElement;
 const themeIcon = document.getElementById("theme-icon")!;
+const btnYolo = document.getElementById("btn-yolo")! as HTMLButtonElement;
+const yoloIcon = document.getElementById("yolo-icon")!;
 const btnMinimize = document.getElementById("btn-minimize")! as HTMLButtonElement;
 const ghostIcon = document.getElementById("ghost-icon")!;
 const btnClose = document.getElementById("btn-close")! as HTMLButtonElement;
@@ -55,8 +63,11 @@ const ghostFeedbackText = document.getElementById("ghost-feedback-text")!;
 // State
 let currentPermissionRequestId: string | null = null;
 let currentPermissionToolName: string | null = null;
+let currentPermissionPayload: any = null;
 let currentQuestionRequestId: string | null = null;
 let currentQuestionToolInput: Record<string, unknown> | null = null;
+let currentQuestionPayload: any = null;
+let currentSessionId: string | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 let showTime: number | null = null;
 let elapsedInterval: ReturnType<typeof setInterval> | null = null;
@@ -71,10 +82,16 @@ type QueuedEvent =
 const eventQueue: QueuedEvent[] = [];
 let isProcessingEvent = false;
 
+function hasPendingInteractive(): boolean {
+  return eventQueue.some(e => e.type === "permission" || e.type === "question");
+}
+
 function updatePendingBadge() {
-  const count = eventQueue.filter(e => e.type === "permission" || e.type === "question").length;
-  if (count > 0) {
-    pendingBadge.textContent = `${count} pending`;
+  const queued = eventQueue.filter(e => e.type === "permission" || e.type === "question").length;
+  const showing = (currentPermissionRequestId || currentQuestionRequestId) ? 1 : 0;
+  const total = queued + showing;
+  if (total > 1) {
+    pendingBadge.textContent = `${total} pending`;
     pendingBadge.classList.remove("hidden");
   } else {
     pendingBadge.classList.add("hidden");
@@ -145,6 +162,7 @@ function enqueueEvent(event: QueuedEvent) {
 }
 let isMuted = localStorage.getItem("shelly-muted") === "true";
 let ghostMode = false; // ghost mode off by default
+let yoloMode = false; // yolo mode (auto-approve) off by default
 
 // Theme: "glass" (default) | "white" | "dark"
 const THEMES = ["glass", "white", "dark"] as const;
@@ -475,6 +493,7 @@ function showNotificationEvent(event: any) {
   expand();
   hideAllViews();
 
+  currentSessionId = event.session_id || null;
   setAgentStyle(notificationIcon, notificationBadge, event.agent);
   notificationMessage.textContent = event.message || "Notification";
   notificationView.classList.remove("hidden");
@@ -486,7 +505,7 @@ function showNotificationEvent(event: any) {
   if (hideTimer) clearTimeout(hideTimer);
   hideTimer = setTimeout(() => {
     processNextEvent();
-  }, 5000);
+  }, 15000);
 }
 
 function showQuestionEvent(event: any) {
@@ -495,8 +514,14 @@ function showQuestionEvent(event: any) {
   hideAllViews();
 
   currentQuestionRequestId = event.request_id;
+  currentQuestionPayload = event;
+  currentSessionId = event.session_id || null;
   const toolInput = event.tool_input || {};
   currentQuestionToolInput = toolInput;
+
+  // Show project context
+  questionProject.textContent = event.project ? `· ${event.project}` : "";
+  updatePendingBadge();
 
   const questions = toolInput.questions as Question[] | undefined;
   if (Array.isArray(questions) && questions.length > 0) {
@@ -523,6 +548,13 @@ function showPermissionEvent(event: any) {
 
   currentPermissionRequestId = event.request_id;
   currentPermissionToolName = event.tool_name;
+  currentPermissionPayload = event;
+  currentSessionId = event.session_id || null;
+
+  // Show project context
+  permissionProject.textContent = event.project ? `· ${event.project}` : "";
+  updatePendingBadge();
+
   setAgentStyle(permissionIcon, null, event.agent);
   const { title, detail } = formatToolInput(event.tool_name, event.tool_input || {});
   permissionTool.textContent = title;
@@ -540,6 +572,7 @@ function showStopEvent(event: any) {
   expand();
   hideAllViews();
 
+  currentSessionId = event.session_id || null;
   const config = getAgentConfig(event.agent);
   setAgentStyle(stopIcon, null, event.agent);
   let msg = `${config.name} finished`;
@@ -555,7 +588,7 @@ function showStopEvent(event: any) {
 
   hideTimer = setTimeout(() => {
     processNextEvent();
-  }, 4000);
+  }, 15000);
 }
 
 // ─── Event Listeners (enqueue incoming events) ───────────────────────
@@ -639,6 +672,49 @@ function handleDeny() {
 btnAllow.addEventListener("click", handleAllow);
 btnAllowAlways.addEventListener("click", handleAllowAlways);
 btnDeny.addEventListener("click", handleDeny);
+
+// ─── Jump to Terminal ─────────────────────────────────────────────────
+
+async function handleJumpToTerminal() {
+  await appWindow.hide();
+  try {
+    if (currentSessionId) {
+      await invoke("jump_to_session", { sessionId: currentSessionId });
+    } else {
+      const terminals = await invoke("get_terminals") as string[];
+      if (terminals.length > 0) {
+        await invoke("jump_to_terminal", { terminalApp: terminals[0] });
+      }
+    }
+  } catch {
+    // no terminals found
+  }
+}
+
+btnJumpPerm.addEventListener("click", handleJumpToTerminal);
+btnJumpQuestion.addEventListener("click", handleJumpToTerminal);
+btnJumpStop.addEventListener("click", handleJumpToTerminal);
+btnJumpNotif.addEventListener("click", handleJumpToTerminal);
+
+// ─── Skip (cycle through pending events) ──────────────────────────────
+
+function handleSkip() {
+  // Re-queue the current event at the end
+  if (currentPermissionRequestId) {
+    eventQueue.push({ type: "permission", payload: { ...currentPermissionPayload } });
+    currentPermissionRequestId = null;
+    currentPermissionToolName = null;
+  } else if (currentQuestionRequestId) {
+    eventQueue.push({ type: "question", payload: { ...currentQuestionPayload } });
+    currentQuestionRequestId = null;
+    currentQuestionToolInput = null;
+  }
+  updatePendingBadge();
+  processNextEvent();
+}
+
+pendingBadge.addEventListener("click", handleSkip);
+pendingBadge.style.cursor = "pointer";
 
 // ─── Keyboard Shortcuts ──────────────────────────────────────────────
 
@@ -757,6 +833,23 @@ btnMinimize.addEventListener("click", () => {
 
 updateGhostIcon();
 
+// ─── Yolo Mode Toggle ────────────────────────────────────────────────
+
+function updateYoloIcon() {
+  // ⚡ = yolo on, ⚡⃠ = yolo off (crossed out)
+  yoloIcon.textContent = yoloMode ? "\u26A1" : "\u26A1\u20E0";
+  btnYolo.classList.toggle("active", yoloMode);
+}
+
+btnYolo.addEventListener("click", () => {
+  yoloMode = !yoloMode;
+  updateYoloIcon();
+  invoke("set_yolo_mode", { enabled: yoloMode });
+  playSound(yoloMode ? "allow" : "deny");
+});
+
+updateYoloIcon();
+
 btnClose.addEventListener("click", () => {
   appWindow.close();
 });
@@ -795,14 +888,20 @@ async function checkForUpdates() {
     if (update) {
       console.log(`Update available: ${update.version}`);
       await update.downloadAndInstall();
-      await relaunch();
+      // Show brief notification before relaunch
+      hideAllViews();
+      notificationMessage.textContent = `Updating to v${update.version}...`;
+      notificationView.classList.remove("hidden");
+      invoke("resize_window", { height: 180 });
+      showContainer();
+      playSound("notification");
+      setTimeout(() => relaunch(), 2000);
     }
   } catch (e) {
     console.log("Update check failed:", e);
   }
 }
 
-// Check for updates 10s after launch, then every 4 hours
-setTimeout(checkForUpdates, 10000);
-setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
+// Check for updates 60s after launch
+setTimeout(checkForUpdates, 60000);
 

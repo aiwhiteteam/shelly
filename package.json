@@ -1,6 +1,6 @@
 {
   "name": "shelly",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI agent monitor for macOS — notch-style floating panel",
   "scripts": {
     "build:frontend": "esbuild src/renderer/renderer.ts --bundle --outfile=dist/renderer/renderer.js --format=esm --target=es2020 --sourcemap && cp src/renderer/index.html dist/renderer/ && cp src/renderer/styles.css dist/renderer/",

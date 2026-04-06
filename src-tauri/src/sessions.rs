@@ -119,6 +119,87 @@ unsafe fn nix_kill(pid: i32, sig: i32) -> i32 {
     unsafe { kill(pid, sig) }
 }
 
+/// Walk the parent PID chain to find which terminal app a process is running in.
+pub fn find_terminal_for_session(session_id: &str) -> Option<String> {
+    // Find the PID for this session — try matching session_id, then try as PID filename
+    let sessions = scan_all();
+    let session = sessions.iter().find(|s| {
+        s.session_id == session_id || s.pid.to_string() == session_id
+    });
+
+    // If no session match, try reading the session file directly by scanning ~/.claude/sessions/
+    let pid = if let Some(s) = session {
+        s.pid
+    } else {
+        // Try to find a session file where sessionId matches
+        let sessions_dir = dirs::home_dir()?.join(".claude").join("sessions");
+        let mut found_pid = None;
+        if let Ok(entries) = fs::read_dir(&sessions_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map(|e| e == "json").unwrap_or(false) {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                            let file_session_id = data.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                            if file_session_id == session_id {
+                                found_pid = data.get("pid").and_then(|v| v.as_u64()).map(|p| p as u32);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        found_pid?
+    };
+    let mut pid = pid;
+
+    // Known terminal app markers in process paths (lowercase)
+    let markers: &[(&str, &str)] = &[
+        ("iterm", "iTerm2"),
+        ("terminal.app", "Terminal"),
+        ("warp.app", "Warp"),
+        ("ghostty", "Ghostty"),
+        ("alacritty", "Alacritty"),
+        ("kitty", "kitty"),
+        ("wezterm", "WezTerm"),
+        ("hyper", "Hyper"),
+        ("visual studio code", "Visual Studio Code"),
+        ("cursor.app", "Cursor"),
+        ("windsurf", "Windsurf"),
+        ("zed.app", "Zed"),
+        ("rio.app", "Rio"),
+    ];
+
+    // Walk up the process tree (max 15 hops)
+    for _ in 0..15 {
+        let output = Command::new("ps")
+            .args(["-o", "ppid=,comm=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if line.is_empty() {
+            break;
+        }
+
+        let lower = line.to_lowercase();
+        for (marker, app_name) in markers {
+            if lower.contains(marker) {
+                return Some(app_name.to_string());
+            }
+        }
+
+        // Move to parent
+        let ppid: u32 = line.split_whitespace().next()?.parse().ok()?;
+        if ppid <= 1 {
+            break;
+        }
+        pid = ppid;
+    }
+
+    None
+}
+
 pub fn detect_terminals() -> Vec<String> {
     let mut running = Vec::new();
     let pattern = TERMINAL_APPS.join("|");
@@ -139,14 +220,28 @@ pub fn detect_terminals() -> Vec<String> {
 }
 
 pub fn jump_to_terminal(terminal_app: &str) {
-    let app_name = match terminal_app {
-        "Terminal" => "Terminal",
-        "iTerm2" => "iTerm",
-        "Visual Studio Code" => "Visual Studio Code",
-        other => other,
+    // Try activation by bundle ID first (more reliable), fall back to app name
+    let activated = match terminal_app {
+        "Visual Studio Code" => try_activate_bundle_id("com.microsoft.VSCode"),
+        "Cursor" => try_activate_bundle_id("com.todesktop.230313mzl4w4u92"),
+        _ => false,
     };
 
-    let _ = Command::new("osascript")
-        .args(["-e", &format!("tell application \"{}\" to activate", app_name)])
-        .output();
+    if !activated {
+        let app_name = match terminal_app {
+            "iTerm2" => "iTerm",
+            other => other,
+        };
+        let _ = Command::new("osascript")
+            .args(["-e", &format!("tell application \"{}\" to activate", app_name)])
+            .output();
+    }
+}
+
+fn try_activate_bundle_id(bundle_id: &str) -> bool {
+    Command::new("open")
+        .args(["-b", bundle_id])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }

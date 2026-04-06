@@ -25,6 +25,23 @@ fn jump_to_terminal(terminal_app: String) {
 }
 
 #[tauri::command]
+fn jump_to_session(session_id: String) {
+    match sessions::find_terminal_for_session(&session_id) {
+        Some(terminal) => {
+            log::info!("Jumping to terminal '{}' for session {}", terminal, session_id);
+            sessions::jump_to_terminal(&terminal);
+        }
+        None => {
+            log::warn!("No terminal found for session {}, falling back to first detected", session_id);
+            let terminals = sessions::detect_terminals();
+            if let Some(first) = terminals.first() {
+                sessions::jump_to_terminal(first);
+            }
+        }
+    }
+}
+
+#[tauri::command]
 fn respond_permission(request_id: String, behavior: String) {
     server::resolve_permission(&request_id, &behavior);
 }
@@ -32,6 +49,11 @@ fn respond_permission(request_id: String, behavior: String) {
 #[tauri::command]
 fn respond_question(request_id: String, permission_decision: String, updated_input: Option<serde_json::Value>) {
     server::resolve_pre_tool_use(&request_id, &permission_decision, updated_input);
+}
+
+#[tauri::command]
+fn set_yolo_mode(enabled: bool) {
+    server::set_yolo_mode(enabled);
 }
 
 #[tauri::command]
@@ -49,6 +71,11 @@ fn resize_window(window: tauri::WebviewWindow, height: f64) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Clean up hooks on panic
+    std::panic::set_hook(Box::new(|_| {
+        hooks::uninstall();
+    }));
+
     // Clean up hooks on Ctrl+C / SIGTERM
     let _ = ctrlc::set_handler(|| {
         hooks::uninstall();
@@ -91,9 +118,11 @@ pub fn run() {
             get_sessions,
             get_terminals,
             jump_to_terminal,
+            jump_to_session,
             respond_permission,
             respond_question,
             allow_tool_always,
+            set_yolo_mode,
             resize_window,
         ])
         .build(tauri::generate_context!())
