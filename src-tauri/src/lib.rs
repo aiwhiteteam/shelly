@@ -59,6 +59,7 @@ fn set_yolo_mode(enabled: bool) {
 #[tauri::command]
 fn allow_tool_always(tool_name: String) {
     hooks::add_allow_rule(&tool_name);
+    server::add_always_allow_tool(&tool_name);
 }
 
 #[tauri::command]

@@ -1,7 +1,7 @@
 use axum::{extract::State, routing::{get, post}, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
@@ -17,6 +17,10 @@ struct AppState {
     pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<PreToolUseDecision>>>>,
     tauri_handle: tauri::AppHandle,
     yolo_mode: Arc<AtomicBool>,
+    /// Tool names the user has chosen to always allow this session.
+    /// Applies across all agents, not just Claude (which also gets a
+    /// claude-settings.json rule for persistence).
+    always_allow_tools: Arc<Mutex<HashSet<String>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -87,6 +91,13 @@ pub fn set_yolo_mode(enabled: bool) {
     if let Some(state) = GLOBAL_STATE.get() {
         state.yolo_mode.store(enabled, Ordering::Relaxed);
         log::info!("Yolo mode set to {}", enabled);
+    }
+}
+
+pub fn add_always_allow_tool(tool_name: &str) {
+    if let Some(state) = GLOBAL_STATE.get() {
+        state.always_allow_tools.lock().unwrap().insert(tool_name.to_string());
+        log::info!("Always-allow added for tool: {}", tool_name);
     }
 }
 
@@ -241,13 +252,16 @@ fn permission_allow_response() -> Value {
     })
 }
 
-/// Returns Some(allow) if the permission should be auto-approved (AskUserQuestion bypass or yolo mode).
+/// Returns Some(allow) if the permission should be auto-approved.
 /// Returns None if the permission needs interactive approval.
-fn check_auto_approve(tool_name: &str, yolo_mode: bool) -> Option<Value> {
+fn check_auto_approve(tool_name: &str, yolo_mode: bool, always_allow: &HashSet<String>) -> Option<Value> {
     if tool_name == "AskUserQuestion" || tool_name == "ask_user_question" {
         return Some(permission_allow_response());
     }
     if yolo_mode {
+        return Some(permission_allow_response());
+    }
+    if always_allow.contains(tool_name) {
         return Some(permission_allow_response());
     }
     None
@@ -256,11 +270,14 @@ fn check_auto_approve(tool_name: &str, yolo_mode: bool) -> Option<Value> {
 async fn permission(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
     let tool_name = body.get("tool_name").or(body.get("tool")).and_then(|v| v.as_str()).unwrap_or("");
 
-    if let Some(response) = check_auto_approve(tool_name, state.yolo_mode.load(Ordering::Relaxed)) {
-        if tool_name != "AskUserQuestion" && tool_name != "ask_user_question" {
-            log::info!("Yolo mode: auto-approving permission for {}", tool_name);
+    {
+        let allow_set = state.always_allow_tools.lock().unwrap().clone();
+        if let Some(response) = check_auto_approve(tool_name, state.yolo_mode.load(Ordering::Relaxed), &allow_set) {
+            if tool_name != "AskUserQuestion" && tool_name != "ask_user_question" {
+                log::info!("Auto-approving permission for {}", tool_name);
+            }
+            return Json(response);
         }
-        return Json(response);
     }
 
     log::info!("Permission request received: {}", serde_json::to_string(&body).unwrap_or_default());
@@ -371,6 +388,7 @@ pub async fn start(handle: tauri::AppHandle) {
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         tauri_handle: handle,
         yolo_mode: Arc::new(AtomicBool::new(false)),
+        always_allow_tools: Arc::new(Mutex::new(HashSet::new())),
     };
 
     let _ = GLOBAL_STATE.set(state.clone());
@@ -454,7 +472,7 @@ mod tests {
 
     #[test]
     fn auto_approve_ask_user_question_always_allowed() {
-        let result = check_auto_approve("AskUserQuestion", false);
+        let result = check_auto_approve("AskUserQuestion", false, &HashSet::new());
         assert!(result.is_some());
         let decision = &result.unwrap()["hookSpecificOutput"]["decision"]["behavior"];
         assert_eq!(decision, "allow");
@@ -462,7 +480,7 @@ mod tests {
 
     #[test]
     fn auto_approve_ask_user_question_snake_case() {
-        let result = check_auto_approve("ask_user_question", false);
+        let result = check_auto_approve("ask_user_question", false, &HashSet::new());
         assert!(result.is_some());
         let decision = &result.unwrap()["hookSpecificOutput"]["decision"]["behavior"];
         assert_eq!(decision, "allow");
@@ -471,7 +489,7 @@ mod tests {
     #[test]
     fn auto_approve_yolo_mode_approves_any_tool() {
         for tool in &["Bash", "Write", "Edit", "Read", "SomeCustomTool"] {
-            let result = check_auto_approve(tool, true);
+            let result = check_auto_approve(tool, true, &HashSet::new());
             assert!(result.is_some(), "Yolo mode should auto-approve {}", tool);
             let decision = &result.unwrap()["hookSpecificOutput"]["decision"]["behavior"];
             assert_eq!(decision, "allow");
@@ -481,20 +499,20 @@ mod tests {
     #[test]
     fn auto_approve_normal_mode_requires_interaction() {
         for tool in &["Bash", "Write", "Edit", "Read", "SomeCustomTool"] {
-            let result = check_auto_approve(tool, false);
+            let result = check_auto_approve(tool, false, &HashSet::new());
             assert!(result.is_none(), "Normal mode should NOT auto-approve {}", tool);
         }
     }
 
     #[test]
     fn auto_approve_empty_tool_name_normal_mode() {
-        let result = check_auto_approve("", false);
+        let result = check_auto_approve("", false, &HashSet::new());
         assert!(result.is_none());
     }
 
     #[test]
     fn auto_approve_empty_tool_name_yolo_mode() {
-        let result = check_auto_approve("", true);
+        let result = check_auto_approve("", true, &HashSet::new());
         assert!(result.is_some());
     }
 
