@@ -125,6 +125,10 @@ fn bridge_cmd(agent: &str, endpoint: &str) -> String {
     format!("python3 {} {} {}", script, agent, endpoint)
 }
 
+// NOTE: Codex CLI and Gemini CLI hook `timeout` is specified in
+// MILLISECONDS (unlike Claude Code, which uses seconds). 300000 = 5 min
+// for blocking permission hooks, 30000 = 30s for fire-and-forget.
+
 fn codex_hooks() -> Value {
     serde_json::json!({
         "PreToolUse": [
@@ -133,7 +137,7 @@ fn codex_hooks() -> Value {
                 "hooks": [{
                     "type": "command",
                     "command": bridge_cmd("codex-cli", "permission"),
-                    "timeout": 120
+                    "timeout": 300000
                 }]
             }
         ],
@@ -143,7 +147,7 @@ fn codex_hooks() -> Value {
                 "hooks": [{
                     "type": "command",
                     "command": bridge_cmd("codex-cli", "stop"),
-                    "timeout": 5
+                    "timeout": 30000
                 }]
             }
         ]
@@ -158,7 +162,7 @@ fn gemini_hooks() -> Value {
                 "hooks": [{
                     "type": "command",
                     "command": bridge_cmd("gemini-cli", "permission"),
-                    "timeout": 120
+                    "timeout": 300000
                 }]
             }
         ],
@@ -168,7 +172,7 @@ fn gemini_hooks() -> Value {
                 "hooks": [{
                     "type": "command",
                     "command": bridge_cmd("gemini-cli", "notification"),
-                    "timeout": 5
+                    "timeout": 30000
                 }]
             }
         ],
@@ -178,7 +182,7 @@ fn gemini_hooks() -> Value {
                 "hooks": [{
                     "type": "command",
                     "command": bridge_cmd("gemini-cli", "stop"),
-                    "timeout": 5
+                    "timeout": 30000
                 }]
             }
         ]
