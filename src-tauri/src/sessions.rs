@@ -239,6 +239,7 @@ pub fn jump_to_terminal(terminal_app: &str, tty: Option<&str>) {
     // For tabbed terminals with a known TTY, target the specific tab/session.
     if let Some(tty) = tty {
         let tty_path = if tty.starts_with("/dev/") { tty.to_string() } else { format!("/dev/{}", tty) };
+        log::info!("jump_to_terminal: app={} tty_path={}", terminal_app, tty_path);
         let script = match terminal_app {
             "iTerm2" => Some(format!(
                 r#"tell application "iTerm"
@@ -276,7 +277,16 @@ end tell"#,
             _ => None,
         };
         if let Some(script) = script {
-            let _ = Command::new("osascript").args(["-e", &script]).output();
+            let out = Command::new("osascript").args(["-e", &script]).output();
+            match out {
+                Ok(o) => log::info!(
+                    "osascript exit={:?} stdout={} stderr={}",
+                    o.status.code(),
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                ),
+                Err(e) => log::error!("osascript spawn failed: {}", e),
+            }
             return;
         }
     }
