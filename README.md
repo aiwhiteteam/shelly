@@ -2,7 +2,7 @@
 
 **Stay in flow while your agents keep working.** Monitor, approve, and respond — right from a floating overlay.
 
-Shelly is a native macOS app that gives you a beautiful glass-style control surface for AI coding agents. It intercepts permission requests, multi-choice questions, and notifications so you never have to switch to the terminal.
+Shelly is a free macOS app that can monitor and auto approve all claude code sessions in all terminals. It intercepts permission requests, multi-choice questions, and notifications so you never have to switch to the terminal.
 
 Built with Tauri 2 and Rust. Under 15MB, minimal RAM, instant startup.
 
