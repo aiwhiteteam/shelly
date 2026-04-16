@@ -1,4 +1,4 @@
-# Shelly (shellyai.app)
+# Shelly
 
 **Stay in flow while your agents keep working.** Monitor, approve, and respond — right from a floating overlay.
 
