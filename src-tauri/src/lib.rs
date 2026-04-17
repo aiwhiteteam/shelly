@@ -2,8 +2,35 @@ mod server;
 mod hooks;
 mod sessions;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri::window::Color;
+
+/// Bring the main window to the front on the active space (including fullscreen).
+/// Safe to call from any thread — dispatches native calls to the main thread.
+pub fn bring_to_front(handle: &tauri::AppHandle) {
+    let h = handle.clone();
+    let _ = handle.run_on_main_thread(move || {
+        if let Some(window) = h.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            #[cfg(target_os = "macos")]
+            {
+                use raw_window_handle::HasWindowHandle;
+                if let Ok(wh) = window.window_handle() {
+                    if let raw_window_handle::RawWindowHandle::AppKit(h) = wh.as_raw() {
+                        unsafe {
+                            use objc2::msg_send;
+                            use objc2::runtime::AnyObject;
+                            let ns_view = h.ns_view.as_ptr() as *mut AnyObject;
+                            let ns_window: *mut AnyObject = msg_send![ns_view, window];
+                            let _: () = msg_send![ns_window, orderFrontRegardless];
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
 
 #[tauri::command]
 fn get_sessions() -> serde_json::Value {
@@ -64,7 +91,7 @@ fn allow_tool_always(tool_name: String) {
 
 #[tauri::command]
 fn resize_window(window: tauri::WebviewWindow, height: f64) {
-    let size = window.outer_size().unwrap_or(tauri::PhysicalSize { width: 520, height: 180 }.into());
+    let size = window.outer_size().unwrap_or(tauri::PhysicalSize { width: 520, height: 48 }.into());
     let scale = window.scale_factor().unwrap_or(1.0);
     let physical_height = (height * scale) as u32;
     let _ = window.set_size(tauri::PhysicalSize::new(size.width, physical_height));
@@ -91,9 +118,43 @@ pub fn run() {
                     .build(),
             )?;
 
-            // Make webview truly transparent on macOS
+            // Make webview truly transparent on macOS and center horizontally at top
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
+                // Center horizontally while keeping y=0 (top of screen)
+                if let Ok(monitor) = window.current_monitor() {
+                    if let Some(monitor) = monitor {
+                        let screen_width = monitor.size().width as f64 / monitor.scale_factor();
+                        let window_width = 520.0;
+                        let x = ((screen_width - window_width) / 2.0) as i32;
+                        let _ = window.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition::new(
+                                (x as f64 * monitor.scale_factor()) as i32,
+                                0,
+                            ),
+                        ));
+                    }
+                }
+
+                // Set window level and collection behavior to appear over fullscreen apps
+                #[cfg(target_os = "macos")]
+                {
+                    use raw_window_handle::HasWindowHandle;
+                    if let Ok(wh) = window.window_handle() {
+                        if let raw_window_handle::RawWindowHandle::AppKit(handle) = wh.as_raw() {
+                            unsafe {
+                                use objc2::msg_send;
+                                use objc2::runtime::AnyObject;
+                                let ns_view = handle.ns_view.as_ptr() as *mut AnyObject;
+                                let ns_window: *mut AnyObject = msg_send![ns_view, window];
+                                // NSStatusWindowLevel (25) — above fullscreen windows
+                                let _: () = msg_send![ns_window, setLevel: 25_i64];
+                                // CanJoinAllSpaces (1) | FullScreenAuxiliary (256)
+                                let _: () = msg_send![ns_window, setCollectionBehavior: 257_u64];
+                            }
+                        }
+                    }
+                }
             }
 
 
@@ -131,12 +192,13 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     hooks::uninstall();
                 }
-                // macOS: clicking dock icon when window is hidden re-shows it
+                // macOS: clicking dock icon re-shows and expands the island
                 tauri::RunEvent::Reopen { .. } => {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.set_focus();
                     }
+                    let _ = app.emit("shelly://reopen", ());
                 }
                 _ => {}
             }

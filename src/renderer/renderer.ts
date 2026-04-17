@@ -1,10 +1,10 @@
-// Agent config
+// Agent config — Open Island palette
 const AGENT_CONFIGS: Record<string, { name: string; color: string; icon: string }> = {
-  "claude-code": { name: "Claude Code", color: "#d97757", icon: "⚡" },
-  "codex-cli": { name: "Codex CLI", color: "#22c55e", icon: "◆" },
-  "gemini-cli": { name: "Gemini CLI", color: "#3b82f6", icon: "✦" },
-  cursor: { name: "Cursor", color: "#a855f7", icon: "▸" },
-  opencode: { name: "OpenCode", color: "#f59e0b", icon: "○" },
+  "claude-code": { name: "Claude Code", color: "#6E9FFF", icon: "\u26A1" },
+  "codex-cli": { name: "Codex CLI", color: "#42E86B", icon: "\u25C6" },
+  "gemini-cli": { name: "Gemini CLI", color: "#6E9FFF", icon: "\u2726" },
+  cursor: { name: "Cursor", color: "#FFB547", icon: "\u25B8" },
+  opencode: { name: "OpenCode", color: "#FFB547", icon: "\u25CB" },
 };
 
 // Tauri API
@@ -48,8 +48,6 @@ const btnJumpStop = document.getElementById("btn-jump-stop")! as HTMLButtonEleme
 const btnJumpNotif = document.getElementById("btn-jump-notif")! as HTMLButtonElement;
 const btnMute = document.getElementById("btn-mute")! as HTMLButtonElement;
 const muteIcon = document.getElementById("mute-icon")!;
-const btnTheme = document.getElementById("btn-theme")! as HTMLButtonElement;
-const themeIcon = document.getElementById("theme-icon")!;
 const btnYolo = document.getElementById("btn-yolo")! as HTMLButtonElement;
 const yoloIcon = document.getElementById("yolo-icon")!;
 const btnMinimize = document.getElementById("btn-minimize")! as HTMLButtonElement;
@@ -59,6 +57,14 @@ const pendingBadge = document.getElementById("pending-badge")!;
 const ghostFeedback = document.getElementById("ghost-feedback")!;
 const ghostFeedbackIcon = document.getElementById("ghost-feedback-icon")!;
 const ghostFeedbackText = document.getElementById("ghost-feedback-text")!;
+const scoutLogo = document.getElementById("scout-logo")!;
+const pixelGlyphCanvas = document.getElementById("pixel-glyph")! as HTMLCanvasElement;
+const sessionBadge = document.getElementById("session-badge")!;
+const attentionDot = document.getElementById("attention-dot")!;
+const btnDismissNotif = document.getElementById("btn-dismiss-notif")! as HTMLButtonElement;
+const btnDismissStop = document.getElementById("btn-dismiss-stop")! as HTMLButtonElement;
+const btnMinimizePerm = document.getElementById("btn-minimize-perm")! as HTMLButtonElement;
+const btnMinimizeQuestion = document.getElementById("btn-minimize-question")! as HTMLButtonElement;
 
 // State
 let currentPermissionRequestId: string | null = null;
@@ -69,8 +75,7 @@ let currentQuestionToolInput: Record<string, unknown> | null = null;
 let currentQuestionPayload: any = null;
 let currentSessionId: string | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
-let showTime: number | null = null;
-let elapsedInterval: ReturnType<typeof setInterval> | null = null;
+let isCompact = true;
 
 // ─── Event Queue ─────────────────────────────────────────────────────
 type QueuedEvent =
@@ -86,6 +91,22 @@ function hasPendingInteractive(): boolean {
   return eventQueue.some(e => e.type === "permission" || e.type === "question");
 }
 
+function updateAttentionDot() {
+  const hasInteractive = isProcessingEvent || hasPendingInteractive();
+  if (hasInteractive) {
+    attentionDot.classList.remove("hidden");
+    // Color based on type of pending event
+    const pendingType = currentPermissionRequestId ? "permission" :
+      currentQuestionRequestId ? "question" :
+      eventQueue.find(e => e.type === "permission") ? "permission" :
+      eventQueue.find(e => e.type === "question") ? "question" : null;
+    attentionDot.classList.remove("phase-question", "phase-running");
+    if (pendingType === "question") attentionDot.classList.add("phase-question");
+  } else {
+    attentionDot.classList.add("hidden");
+  }
+}
+
 function updatePendingBadge() {
   const queued = eventQueue.filter(e => e.type === "permission" || e.type === "question").length;
   const showing = (currentPermissionRequestId || currentQuestionRequestId) ? 1 : 0;
@@ -96,16 +117,18 @@ function updatePendingBadge() {
   } else {
     pendingBadge.classList.add("hidden");
   }
+  updateAttentionDot();
 }
 
 function processNextEvent() {
   if (eventQueue.length === 0) {
     isProcessingEvent = false;
     updatePendingBadge();
+    updateAttentionDot();
     if (ghostMode) {
       ghostHide();
     } else {
-      showIdleView();
+      hideToEdge();
     }
     return;
   }
@@ -126,8 +149,6 @@ function processNextEvent() {
 }
 
 function enqueueEvent(event: QueuedEvent) {
-  // Notifications and stop events can show immediately if nothing is active,
-  // otherwise they queue like everything else
   if (event.type === "notification" || event.type === "stop") {
     if (!isProcessingEvent) {
       isProcessingEvent = true;
@@ -144,7 +165,6 @@ function enqueueEvent(event: QueuedEvent) {
     return;
   }
 
-  // Permission/Question: queue if something is already showing
   if (isProcessingEvent) {
     eventQueue.push(event);
     updatePendingBadge();
@@ -160,14 +180,10 @@ function enqueueEvent(event: QueuedEvent) {
   }
   updatePendingBadge();
 }
-let isMuted = localStorage.getItem("shelly-muted") === "true";
-let ghostMode = false; // ghost mode off by default
-let yoloMode = false; // yolo mode (auto-approve) off by default
 
-// Theme: "glass" (default) | "white" | "dark"
-const THEMES = ["glass", "white", "dark"] as const;
-type Theme = typeof THEMES[number];
-let currentTheme: Theme = (localStorage.getItem("shelly-theme") as Theme) || "dark";
+let isMuted = localStorage.getItem("shelly-muted") === "true";
+let ghostMode = false;
+let yoloMode = false;
 
 // ─── 8-bit Sound Synthesis ───────────────────────────────────────────
 
@@ -289,22 +305,219 @@ function setAgentStyle(iconEl: HTMLElement, badgeEl: HTMLElement | null, agentId
   }
 }
 
+// Island shape is handled by CSS border-radius (flat top, rounded bottom)
+// No clip-path needed — flush top edge + rounded bottom = Dynamic Island look
+
+// ─── Scout Logo (8x8 pixel grid) ────────────────────────────────────
+
+const SCOUT_PATTERN = [
+  "...BBBB...",
+  "..BHHHHB..",
+  ".BHEEEEHB.",
+  "BHEBBBEHB.",
+  "BHEBEEEHB.",
+  "BHEBBBBB..",
+  ".BHEEEEE..",
+  "..BBBBBB..",
+];
+
+function initScoutLogo() {
+  scoutLogo.innerHTML = "";
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 10; x++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      const ch = SCOUT_PATTERN[y][x];
+      if (ch === "B") cell.classList.add("cell-b");
+      else if (ch === "H") cell.classList.add("cell-h");
+      else if (ch === "E") cell.classList.add("cell-e");
+      scoutLogo.appendChild(cell);
+    }
+  }
+}
+
+function setScoutActive(active: boolean) {
+  scoutLogo.classList.toggle("active", active);
+}
+
+// ─── Pixel Glyph Animation (animated bar chart) ─────────────────────
+
+const GLYPH_FRAMES: Record<string, number[][][]> = {
+  bars: [
+    [[1,3,2,1], [2,3,1]],
+    [[2,2,3,1], [1,2,3]],
+    [[1,2,1,3], [3,1,2]],
+    [[3,1,2,2], [2,3,1]],
+  ],
+  steps: [
+    [[1,2,3,4], [1,2,3]],
+    [[2,3,4,3], [2,3,2]],
+    [[1,2,3,4], [3,2,1]],
+    [[2,3,2,1], [2,3,4]],
+  ],
+  blocks: [
+    [[2,4,4,2], [2,4,2]],
+    [[3,4,3,2], [3,4,2]],
+    [[2,3,4,3], [2,4,3]],
+    [[2,4,3,2], [3,4,2]],
+  ],
+};
+
+let glyphStyle: "bars" | "steps" | "blocks" = "bars";
+let glyphFrame = 0;
+let glyphTint = "#6E9FFF"; // default claude blue
+
+function drawPixelGlyph() {
+  const canvas = pixelGlyphCanvas;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = 26;
+  const h = 14;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const frames = GLYPH_FRAMES[glyphStyle];
+  const frame = frames[glyphFrame % frames.length];
+  const [cluster1, cluster2] = frame;
+
+  const pixelSize = 2.4;
+  const spacing = 1.1;
+  const maxRows = 4;
+  const gapBetweenClusters = 3;
+
+  // Parse hex color to RGB
+  const r = parseInt(glyphTint.slice(1, 3), 16);
+  const g = parseInt(glyphTint.slice(3, 5), 16);
+  const b = parseInt(glyphTint.slice(5, 7), 16);
+
+  function drawColumn(colHeights: number[], startX: number, isLastCol: boolean) {
+    colHeights.forEach((height, colIdx) => {
+      const x = startX + colIdx * (pixelSize + spacing);
+      for (let row = 0; row < maxRows; row++) {
+        const fromBottom = maxRows - 1 - row;
+        if (fromBottom < height) {
+          const y = row * (pixelSize + spacing);
+          const rowOpacity = 0.45 + ((row + 1) / maxRows) * 0.50;
+          const colOpacity = (isLastCol && colIdx === colHeights.length - 1) ? 0.86 : 1.0;
+          const alpha = rowOpacity * colOpacity;
+
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          ctx.beginPath();
+          // Rounded rect approximation
+          const cr = 0.4;
+          ctx.moveTo(x + cr, y);
+          ctx.lineTo(x + pixelSize - cr, y);
+          ctx.quadraticCurveTo(x + pixelSize, y, x + pixelSize, y + cr);
+          ctx.lineTo(x + pixelSize, y + pixelSize - cr);
+          ctx.quadraticCurveTo(x + pixelSize, y + pixelSize, x + pixelSize - cr, y + pixelSize);
+          ctx.lineTo(x + cr, y + pixelSize);
+          ctx.quadraticCurveTo(x, y + pixelSize, x, y + pixelSize - cr);
+          ctx.lineTo(x, y + cr);
+          ctx.quadraticCurveTo(x, y, x + cr, y);
+          ctx.fill();
+        }
+      }
+    });
+  }
+
+  const cluster1Width = cluster1.length * (pixelSize + spacing);
+  drawColumn(cluster1, 0, false);
+  drawColumn(cluster2, cluster1Width + gapBetweenClusters, true);
+
+  // Glow effect via shadow
+  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.55)`;
+  ctx.shadowBlur = 2.2;
+}
+
+let glyphInterval: ReturnType<typeof setInterval> | null = null;
+
+function startPixelGlyph() {
+  drawPixelGlyph();
+  if (glyphInterval) clearInterval(glyphInterval);
+  glyphInterval = setInterval(() => {
+    glyphFrame = (glyphFrame + 1) % 4;
+    drawPixelGlyph();
+  }, 180);
+}
+
+// ─── Idle Edge / Compact / Expanded Mode ─────────────────────────────
+
+function hideToEdge() {
+  isCompact = true;
+  container.classList.remove("compact", "expanded");
+  container.classList.add("idle-edge");
+  hideAllViews();
+  setScoutActive(false);
+  invoke("resize_window", { height: 14 });
+  refreshSessions();
+}
+
+function collapse() {
+  isCompact = true;
+  container.classList.remove("expanded", "idle-edge");
+  container.classList.add("compact");
+  hideAllViews();
+  setScoutActive(false);
+  invoke("resize_window", { height: 48 });
+  refreshSessions();
+  // Auto-hide to edge after 5s of idle
+  if (hideTimer) clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    if (!isProcessingEvent) hideToEdge();
+  }, 5000);
+}
+
+function expand() {
+  if (hideTimer) clearTimeout(hideTimer);
+  isCompact = false;
+  container.classList.remove("compact", "idle-edge");
+  container.classList.add("expanded");
+  setScoutActive(true);
+  appWindow.show();
+}
+
 // ─── View Management ─────────────────────────────────────────────────
 
 function hideAllViews() {
-  idleView.classList.add("hidden");
-  notificationView.classList.add("hidden");
-  permissionView.classList.add("hidden");
-  questionView.classList.add("hidden");
-  stopView.classList.add("hidden");
+  [idleView, notificationView, permissionView, questionView, stopView].forEach(v => {
+    v.classList.add("hidden");
+    v.classList.remove("entering");
+  });
+}
+
+/** Show a view with a slide-up fade-in animation */
+function showViewAnimated(view: HTMLElement) {
+  view.classList.remove("hidden");
+  view.classList.add("entering");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      view.classList.remove("entering");
+    });
+  });
 }
 
 function showIdleView() {
+  hideToEdge();
+}
+
+function showExpandedIdle() {
+  expand();
   hideAllViews();
-  idleView.classList.remove("hidden");
-  container.classList.remove("hidden", "fade-out");
+  showViewAnimated(idleView);
   invoke("resize_window", { height: 180 });
+  showContainer();
   refreshSessions();
+  // Auto-collapse after 10s if no events arrive
+  if (hideTimer) clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    if (!isProcessingEvent) collapse();
+  }, 5000);
 }
 
 function showContainer() {
@@ -314,7 +527,7 @@ function showContainer() {
 function returnToIdle(delay = 0) {
   if (hideTimer) clearTimeout(hideTimer);
   hideTimer = setTimeout(() => {
-    showIdleView();
+    collapse();
   }, delay);
 }
 
@@ -325,6 +538,7 @@ async function refreshSessions() {
     const result = await invoke("get_sessions") as { count: number; sessions: Array<{ agent: string; pid: number; cwd: string; session_id: string }> };
     if (result.count === 0) {
       sessionInfo.textContent = "No active agent sessions";
+      sessionBadge.classList.add("hidden");
     } else {
       const byAgent = new Map<string, number>();
       for (const s of result.sessions) {
@@ -336,9 +550,14 @@ async function refreshSessions() {
         parts.push(`${name} (${count})`);
       }
       sessionInfo.textContent = parts.join(" \u00b7 ");
+
+      // Update compact session badge
+      sessionBadge.textContent = String(result.count);
+      sessionBadge.classList.remove("hidden");
     }
   } catch {
     sessionInfo.textContent = "";
+    sessionBadge.classList.add("hidden");
   }
 }
 
@@ -484,8 +703,6 @@ function submitQuestionAnswer(questions: Question[], questionKey: string, answer
   if (ghostMode) { showGhostFeedback("answer"); } else { processNextEvent(); }
 }
 
-// ─── Event Listeners (Tauri events from Rust backend) ────────────────
-
 // ─── Display Functions (called by queue) ─────────────────────────────
 
 function showNotificationEvent(event: any) {
@@ -496,16 +713,15 @@ function showNotificationEvent(event: any) {
   currentSessionId = event.session_id || null;
   setAgentStyle(notificationIcon, notificationBadge, event.agent);
   notificationMessage.textContent = event.message || "Notification";
-  notificationView.classList.remove("hidden");
+  showViewAnimated(notificationView);
   invoke("resize_window", { height: 180 });
-  showContainer();
+  if (!ghostMode) showContainer();
   playSound("notification");
 
-  // Auto-dismiss then process next in queue
   if (hideTimer) clearTimeout(hideTimer);
   hideTimer = setTimeout(() => {
     processNextEvent();
-  }, 15000);
+  }, 5000);
 }
 
 function showQuestionEvent(event: any) {
@@ -519,13 +735,12 @@ function showQuestionEvent(event: any) {
   const toolInput = event.tool_input || {};
   currentQuestionToolInput = toolInput;
 
-  // Show project context
-  questionProject.textContent = event.project ? `· ${event.project}` : "";
+  questionProject.textContent = event.project ? `\u00b7 ${event.project}` : "";
   updatePendingBadge();
 
   const questions = toolInput.questions as Question[] | undefined;
   if (Array.isArray(questions) && questions.length > 0) {
-    questionView.classList.remove("hidden");
+    showViewAnimated(questionView);
     renderQuestionView(questions);
     showContainer();
     playSound("question");
@@ -551,8 +766,7 @@ function showPermissionEvent(event: any) {
   currentPermissionPayload = event;
   currentSessionId = event.session_id || null;
 
-  // Show project context
-  permissionProject.textContent = event.project ? `· ${event.project}` : "";
+  permissionProject.textContent = event.project ? `\u00b7 ${event.project}` : "";
   updatePendingBadge();
 
   setAgentStyle(permissionIcon, null, event.agent);
@@ -561,7 +775,7 @@ function showPermissionEvent(event: any) {
   permissionDetail.textContent = detail;
   permissionDetail.style.display = detail ? "block" : "none";
 
-  permissionView.classList.remove("hidden");
+  showViewAnimated(permissionView);
   invoke("resize_window", { height: 180 });
   showContainer();
   playSound("permission");
@@ -581,14 +795,14 @@ function showStopEvent(event: any) {
     msg += secs < 60 ? ` (${secs}s)` : ` (${Math.floor(secs / 60)}m ${secs % 60}s)`;
   }
   stopMessage.textContent = msg;
-  stopView.classList.remove("hidden");
+  showViewAnimated(stopView);
   invoke("resize_window", { height: 180 });
-  showContainer();
+  if (!ghostMode) showContainer();
   playSound("stop");
 
   hideTimer = setTimeout(() => {
     processNextEvent();
-  }, 15000);
+  }, 5000);
 }
 
 // ─── Event Listeners (enqueue incoming events) ───────────────────────
@@ -609,11 +823,30 @@ listen("shelly://stop", (e: { payload: any }) => {
   enqueueEvent({ type: "stop", payload: e.payload });
 });
 
+// Reopen: dock icon clicked — expand from edge
+listen("shelly://reopen", () => {
+  if (eventQueue.length > 0) {
+    processNextEvent();
+  } else {
+    collapse(); // at least show compact bar
+  }
+});
+
+// Error: server failed to start (e.g. port conflict)
+listen("shelly://error", (e: { payload: any }) => {
+  expand();
+  hideAllViews();
+  notificationMessage.textContent = e.payload.message || "Server error";
+  notificationView.classList.remove("hidden");
+  invoke("resize_window", { height: 180 });
+  showContainer();
+  playSound("deny");
+});
+
 // Dismiss: server detected client disconnect (user answered in terminal)
 listen("shelly://dismiss", (e: { payload: any }) => {
   const dismissId = e.payload.request_id;
 
-  // If this is the currently displayed event, skip to next
   if (currentPermissionRequestId === dismissId) {
     currentPermissionRequestId = null;
     currentPermissionToolName = null;
@@ -627,7 +860,6 @@ listen("shelly://dismiss", (e: { payload: any }) => {
     return;
   }
 
-  // Otherwise remove it from the queue (hasn't been shown yet)
   const idx = eventQueue.findIndex(
     (ev) => (ev.type === "permission" || ev.type === "question") && ev.payload.request_id === dismissId
   );
@@ -696,10 +928,35 @@ btnJumpQuestion.addEventListener("click", handleJumpToTerminal);
 btnJumpStop.addEventListener("click", handleJumpToTerminal);
 btnJumpNotif.addEventListener("click", handleJumpToTerminal);
 
+// Dismiss buttons — immediately skip to next event
+function handleDismiss() {
+  if (hideTimer) clearTimeout(hideTimer);
+  processNextEvent();
+}
+btnDismissNotif.addEventListener("click", handleDismiss);
+btnDismissStop.addEventListener("click", handleDismiss);
+
+// Minimize buttons — re-queue event and collapse to compact bar
+function handleMinimize() {
+  if (currentPermissionRequestId) {
+    eventQueue.push({ type: "permission", payload: { ...currentPermissionPayload } });
+    currentPermissionRequestId = null;
+    currentPermissionToolName = null;
+  } else if (currentQuestionRequestId) {
+    eventQueue.push({ type: "question", payload: { ...currentQuestionPayload } });
+    currentQuestionRequestId = null;
+    currentQuestionToolInput = null;
+  }
+  isProcessingEvent = false;
+  updatePendingBadge();
+  collapse();
+}
+btnMinimizePerm.addEventListener("click", handleMinimize);
+btnMinimizeQuestion.addEventListener("click", handleMinimize);
+
 // ─── Skip (cycle through pending events) ──────────────────────────────
 
 function handleSkip() {
-  // Re-queue the current event at the end
   if (currentPermissionRequestId) {
     eventQueue.push({ type: "permission", payload: { ...currentPermissionPayload } });
     currentPermissionRequestId = null;
@@ -732,27 +989,13 @@ document.addEventListener("keydown", (e) => {
       if (btns[num - 1]) { e.preventDefault(); (btns[num - 1] as HTMLButtonElement).click(); }
     }
   }
-
 });
 
-// ─── Mute & Theme Toggles ────────────────────────────────────────────
-
-const THEME_ICONS: Record<Theme, string> = {
-  glass: "\u25C7",   // ◇ diamond
-  white: "\u25CB",   // ○ circle
-  dark: "\u25CF",    // ● filled circle
-};
+// ─── Mute Toggle ─────────────────────────────────────────────────────
 
 function applyMuteState() {
   muteIcon.textContent = isMuted ? "\u{1F507}" : "\u{1F508}";
   btnMute.classList.toggle("active", isMuted);
-}
-
-function applyThemeState() {
-  container.classList.remove("theme-white", "theme-dark");
-  if (currentTheme === "white") container.classList.add("theme-white");
-  else if (currentTheme === "dark") container.classList.add("theme-dark");
-  themeIcon.textContent = THEME_ICONS[currentTheme];
 }
 
 btnMute.addEventListener("click", () => {
@@ -761,15 +1004,9 @@ btnMute.addEventListener("click", () => {
   applyMuteState();
 });
 
-btnTheme.addEventListener("click", () => {
-  const idx = THEMES.indexOf(currentTheme);
-  currentTheme = THEMES[(idx + 1) % THEMES.length];
-  localStorage.setItem("shelly-theme", currentTheme);
-  applyThemeState();
-});
+// ─── Ghost Mode ──────────────────────────────────────────────────────
 
 function updateGhostIcon() {
-  // 👻⃠ = ghost mode off (crossed out), 👻 = ghost mode on
   ghostIcon.textContent = ghostMode ? "\u{1F47B}" : "\u{1F47B}\u20E0";
 }
 
@@ -785,42 +1022,30 @@ function ghostHide() {
 function showGhostFeedback(type: "allow" | "deny" | "answer") {
   if (!ghostMode) return;
 
-  // Hide main content
   hideAllViews();
   container.style.opacity = "0";
   container.style.transition = "opacity 0.3s ease";
 
-  // Show feedback overlay
   ghostFeedback.className = "ghost-feedback";
   if (type === "allow") {
     ghostFeedback.classList.add("feedback-allow");
-    ghostFeedbackIcon.textContent = "\u2714";  // ✔
+    ghostFeedbackIcon.textContent = "\u2714";
     ghostFeedbackText.textContent = "ALLOWED";
   } else if (type === "deny") {
     ghostFeedback.classList.add("feedback-deny");
-    ghostFeedbackIcon.textContent = "\u2718";  // ✘
+    ghostFeedbackIcon.textContent = "\u2718";
     ghostFeedbackText.textContent = "DENIED";
   } else {
     ghostFeedback.classList.add("feedback-answer");
-    ghostFeedbackIcon.textContent = "\u2714";  // ✔
+    ghostFeedbackIcon.textContent = "\u2714";
     ghostFeedbackText.textContent = "ANSWERED";
   }
 
-  // After animation completes, hide window
   setTimeout(() => {
     ghostFeedback.classList.add("hidden");
     container.style.opacity = "1";
     processNextEvent();
   }, 1400);
-}
-
-function expand() {
-  appWindow.show();
-  invoke("resize_window", { height: 180 });
-  if (ghostMode) {
-    container.classList.add("ghost-appearing");
-    setTimeout(() => container.classList.remove("ghost-appearing"), 350);
-  }
 }
 
 btnMinimize.addEventListener("click", () => {
@@ -836,7 +1061,6 @@ updateGhostIcon();
 // ─── Yolo Mode Toggle ────────────────────────────────────────────────
 
 function updateYoloIcon() {
-  // ⚡ = yolo on, ⚡⃠ = yolo off (crossed out)
   yoloIcon.textContent = yoloMode ? "\u26A1" : "\u26A1\u20E0";
   btnYolo.classList.toggle("active", yoloMode);
 }
@@ -855,30 +1079,48 @@ btnClose.addEventListener("click", () => {
 });
 
 applyMuteState();
-applyThemeState();
 
 // ─── Window Dragging ─────────────────────────────────────────────────
 
 const appWindow = getCurrentWindow();
 
-// Make the container draggable — start drag on mousedown unless on a button/input
+// Click idle-edge → show compact bar, click compact bar → expand (pending events or idle)
+container.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  if (target.closest("button") || target.closest("input") || target.closest(".option-btn")) return;
+  if (container.classList.contains("idle-edge")) {
+    collapse(); // edge → compact
+  } else if (isCompact) {
+    // If there are pending events, show them; otherwise show idle view
+    if (eventQueue.length > 0) {
+      processNextEvent();
+    } else {
+      showExpandedIdle();
+    }
+  }
+});
+
 container.addEventListener("mousedown", (e) => {
   const target = e.target as HTMLElement;
-  // Don't drag if clicking on interactive elements
   if (
     target.closest("button") ||
     target.closest("input") ||
-    target.closest(".option-btn")
+    target.closest(".option-btn") ||
+    target.closest("canvas")
   ) {
     return;
   }
+  // Only drag in expanded mode; compact mode uses click-to-expand
+  if (isCompact) return;
   e.preventDefault();
   appWindow.startDragging();
 });
 
 // ─── Init ────────────────────────────────────────────────────────────
 
-showIdleView();
+initScoutLogo();
+startPixelGlyph();
+hideToEdge();
 setInterval(refreshSessions, 10000);
 
 // ─── Auto-Update Check ───────────────────────────────────────────────
@@ -888,10 +1130,10 @@ async function checkForUpdates() {
     if (update) {
       console.log(`Update available: ${update.version}`);
       await update.downloadAndInstall();
-      // Show brief notification before relaunch
       hideAllViews();
+      expand();
       notificationMessage.textContent = `Updating to v${update.version}...`;
-      notificationView.classList.remove("hidden");
+      showViewAnimated(notificationView);
       invoke("resize_window", { height: 180 });
       showContainer();
       playSound("notification");
@@ -902,6 +1144,4 @@ async function checkForUpdates() {
   }
 }
 
-// Check for updates 60s after launch
 setTimeout(checkForUpdates, 60000);
-

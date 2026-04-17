@@ -8,23 +8,22 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="container">
+  <div id="container" class="compact">
     <!-- Header bar -->
     <div class="header">
       <div class="header-left">
-        <span class="logo">SHELLY</span>
-        <span class="logo-dot"></span>
+        <div class="scout-logo" id="scout-logo"></div>
+        <canvas id="pixel-glyph" width="26" height="14"></canvas>
+        <span id="attention-dot" class="attention-dot hidden"></span>
+        <span id="session-badge" class="session-badge hidden"></span>
       </div>
       <div class="header-right">
         <span id="pending-badge" class="pending-badge hidden"></span>
-        <button id="btn-info" class="header-btn header-btn-info" data-tooltip="v1.0.0">
+        <button id="btn-info" class="header-btn header-btn-info" data-tooltip="v1.2.1">
           i
         </button>
         <button id="btn-mute" class="header-btn" data-tooltip="Mute / Unmute">
           <span id="mute-icon">&#128264;</span>
-        </button>
-        <button id="btn-theme" class="header-btn" data-tooltip="Switch theme">
-          <span id="theme-icon">&#9670;</span>
         </button>
         <button id="btn-yolo" class="header-btn" data-tooltip="Auto-approve all">
           <span id="yolo-icon">&#9889;&#8416;</span>
@@ -33,7 +32,7 @@
           <span id="ghost-icon">&#128123;&#8416;</span>
         </button>
         <button id="btn-close" class="header-btn header-btn-close" data-tooltip="Quit Shelly">
-          &#10005;
+          &#8722;
         </button>
       </div>
     </div>
@@ -51,50 +50,61 @@
 
       <!-- Notification view -->
       <div id="notification-view" class="view hidden">
-        <div class="event-badge" id="notification-badge">NOTIFICATION</div>
+        <div class="badge-row">
+          <span class="status-dot dot-notification"></span>
+          <div class="event-badge" id="notification-badge">NOTIFICATION</div>
+          <span class="phase-label">Running</span>
+        </div>
         <div class="message-row">
-          <span id="notification-icon" class="agent-icon">⚡</span>
+          <span id="notification-icon" class="agent-icon"></span>
           <span id="notification-message" class="message"></span>
-          <button id="btn-jump-notif" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">↗</span></button>
+          <button id="btn-jump-notif" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">&#8599;</span></button>
+          <button id="btn-dismiss-notif" class="btn btn-dismiss" data-tooltip="Dismiss">&#8722;</button>
         </div>
       </div>
 
       <!-- Permission view (binary Allow/Deny) -->
       <div id="permission-view" class="view hidden">
         <div class="badge-row">
+          <span class="status-dot dot-permission"></span>
           <div class="event-badge badge-permission">PERMISSION REQUEST</div>
+          <span class="phase-label">Waiting for Approval</span>
           <span id="permission-project" class="project-label"></span>
         </div>
         <div class="message-row">
-          <span id="permission-icon" class="agent-icon">⚡</span>
+          <span id="permission-icon" class="agent-icon"></span>
           <span id="permission-tool" class="message"></span>
         </div>
         <div id="permission-detail" class="detail"></div>
         <div class="button-row button-row-3">
           <button id="btn-allow" class="btn btn-allow" data-tooltip="Allow this once">
-            <span class="btn-key">⌘Y</span> Yes
+            <span class="btn-key">&#8984;Y</span> Yes
           </button>
           <button id="btn-allow-always" class="btn btn-allow-always" data-tooltip="Allow and never ask again">
             Always
           </button>
           <button id="btn-deny" class="btn btn-deny" data-tooltip="Deny this action">
-            <span class="btn-key">⌘N</span> No
+            <span class="btn-key">&#8984;N</span> No
           </button>
           <button id="btn-jump-perm" class="btn btn-jump" data-tooltip="Switch to terminal">
-            Go to <span class="jump-icon">↗</span>
+            Go to <span class="jump-icon">&#8599;</span>
           </button>
+          <button id="btn-minimize-perm" class="btn btn-minimize-event" data-tooltip="Minimize">&#9662;</button>
         </div>
       </div>
 
       <!-- Multi-choice question view (AskUserQuestion) -->
       <div id="question-view" class="view hidden">
         <div class="badge-row">
+          <span class="status-dot dot-question"></span>
           <div class="event-badge badge-question">QUESTION</div>
+          <span class="phase-label">Waiting for Answer</span>
           <span id="question-project" class="project-label"></span>
         </div>
         <div class="question-text-row">
           <div id="question-text" class="question-text"></div>
-          <button id="btn-jump-question" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">↗</span></button>
+          <button id="btn-jump-question" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">&#8599;</span></button>
+          <button id="btn-minimize-question" class="btn btn-minimize-event" data-tooltip="Minimize">&#9662;</button>
         </div>
         <div id="question-options" class="question-options"></div>
         <div id="question-input-row" class="question-input-row hidden">
@@ -105,11 +115,16 @@
 
       <!-- Stop view -->
       <div id="stop-view" class="view hidden">
-        <div class="event-badge badge-stop">COMPLETED</div>
+        <div class="badge-row">
+          <span class="status-dot dot-stop"></span>
+          <div class="event-badge badge-stop">COMPLETED</div>
+          <span class="phase-label">Finished</span>
+        </div>
         <div class="message-row">
-          <span id="stop-icon" class="agent-icon">⚡</span>
+          <span id="stop-icon" class="agent-icon"></span>
           <span id="stop-message" class="message">Agent finished</span>
-          <button id="btn-jump-stop" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">↗</span></button>
+          <button id="btn-jump-stop" class="btn btn-jump btn-jump-inline" data-tooltip="Switch to terminal">Go to <span class="jump-icon">&#8599;</span></button>
+          <button id="btn-dismiss-stop" class="btn btn-dismiss" data-tooltip="Dismiss">&#8722;</button>
         </div>
       </div>
     </div>

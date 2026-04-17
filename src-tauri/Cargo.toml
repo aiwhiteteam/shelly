@@ -1,6 +1,6 @@
 [package]
 name = "shelly"
-version = "1.0.1"
+version = "1.2.1"
 description = "AI agent monitor for macOS"
 authors = ["you"]
 license = "MIT"
@@ -24,9 +24,14 @@ tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
+chrono = "0.4"
 ctrlc = "3"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+raw-window-handle = "0.6"
 
 [dev-dependencies]
 tempfile = "3"

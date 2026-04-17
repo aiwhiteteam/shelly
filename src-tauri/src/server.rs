@@ -195,6 +195,7 @@ async fn notification(State(state): State<AppState>, Json(body): Json<Value>) ->
         level: body.get("level").and_then(|v| v.as_str()).unwrap_or("info").to_string(),
     };
     let _ = state.tauri_handle.emit("shelly://notification", &payload);
+    crate::bring_to_front(&state.tauri_handle);
     Json(serde_json::json!({"status": "ok"}))
 }
 
@@ -215,9 +216,10 @@ async fn pre_tool_use(State(state): State<AppState>, Json(body): Json<Value>) ->
     state.pending_questions.lock().unwrap().insert(request_id.clone(), tx);
 
     let _ = state.tauri_handle.emit("shelly://question", &payload);
+    crate::bring_to_front(&state.tauri_handle);
 
-    // Block until user answers or timeout
-    match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
+    // Block until user answers or timeout (5 min for questions)
+    match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
         Ok(Ok(decision)) => {
             let mut hook_output = serde_json::json!({
                 "hookEventName": "PreToolUse",
@@ -298,8 +300,10 @@ async fn permission(State(state): State<AppState>, Json(body): Json<Value>) -> J
     state.pending_permissions.lock().unwrap().insert(request_id.clone(), tx);
 
     let _ = state.tauri_handle.emit("shelly://permission", &payload);
+    crate::bring_to_front(&state.tauri_handle);
 
-    match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
+    // Block until user answers or timeout (5 min for permissions)
+    match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
         Ok(Ok(decision)) => {
             Json(serde_json::json!({
                 "hookSpecificOutput": {
@@ -340,6 +344,7 @@ async fn stop(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Va
         duration_ms: body.get("duration_ms").and_then(|v| v.as_u64()),
     };
     let _ = state.tauri_handle.emit("shelly://stop", &payload);
+    crate::bring_to_front(&state.tauri_handle);
     Json(serde_json::json!({"status": "ok"}))
 }
 
@@ -386,7 +391,7 @@ pub async fn start(handle: tauri::AppHandle) {
     let state = AppState {
         pending_permissions: Arc::new(Mutex::new(HashMap::new())),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
-        tauri_handle: handle,
+        tauri_handle: handle.clone(),
         yolo_mode: Arc::new(AtomicBool::new(false)),
         always_allow_tools: Arc::new(Mutex::new(HashSet::new())),
     };
@@ -405,13 +410,22 @@ pub async fn start(handle: tauri::AppHandle) {
         .route("/hooks/stop", post(stop))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:21517")
-        .await
-        .expect("Failed to bind port 21517");
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:21517").await {
+        Ok(l) => l,
+        Err(e) => {
+            log::error!("Port {} already in use: {}. Is another Shelly instance running?", PORT, e);
+            let _ = handle.emit("shelly://error", serde_json::json!({
+                "message": format!("Port {} is already in use. Another Shelly instance may be running.", PORT)
+            }));
+            return;
+        }
+    };
 
     log::info!("Shelly server listening on http://127.0.0.1:{}", PORT);
 
-    axum::serve(listener, app).await.unwrap();
+    if let Err(e) = axum::serve(listener, app).await {
+        log::error!("Server error: {}", e);
+    }
 }
 
 #[cfg(test)]
