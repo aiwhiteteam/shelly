@@ -125,15 +125,16 @@ fn is_shelly_hook(entry: &Value) -> bool {
         .and_then(|h| h.as_array())
         .map(|hooks| {
             hooks.iter().any(|h| {
-                // HTTP hooks (Claude Code): check url contains localhost:21517
+                // HTTP hooks: check url contains localhost:21517
                 let is_http = h.get("url")
                     .and_then(|u| u.as_str())
                     .map(|u| u.contains(SHELLY_MARKER))
                     .unwrap_or(false);
-                // Command hooks (Codex/Gemini/Cursor/OpenCode): check command contains shelly-bridge.py
+                // Command hooks: shelly-bridge.py (Codex/Gemini/Cursor/OpenCode)
+                // or curl to localhost:21517 (Claude Code)
                 let is_cmd = h.get("command")
                     .and_then(|c| c.as_str())
-                    .map(|c| c.contains(BRIDGE_MARKER))
+                    .map(|c| c.contains(BRIDGE_MARKER) || c.contains(SHELLY_MARKER))
                     .unwrap_or(false);
                 is_http || is_cmd
             })
@@ -149,8 +150,8 @@ fn claude_hooks() -> Value {
             {
                 "matcher": "AskUserQuestion",
                 "hooks": [{
-                    "type": "http",
-                    "url": format!("http://{}/hooks/pre-tool-use", SHELLY_MARKER),
+                    "type": "command",
+                    "command": curl_cmd("pre-tool-use"),
                     "timeout": 300
                 }]
             }
@@ -159,10 +160,9 @@ fn claude_hooks() -> Value {
             {
                 "matcher": "",
                 "hooks": [{
-                    "type": "http",
-                    "url": format!("http://{}/hooks/notification", SHELLY_MARKER),
-                    "timeout": 5,
-                    "async": true
+                    "type": "command",
+                    "command": curl_cmd("notification"),
+                    "timeout": 5
                 }]
             }
         ],
@@ -170,8 +170,8 @@ fn claude_hooks() -> Value {
             {
                 "matcher": "",
                 "hooks": [{
-                    "type": "http",
-                    "url": format!("http://{}/hooks/permission", SHELLY_MARKER),
+                    "type": "command",
+                    "command": curl_cmd("permission"),
                     "timeout": 300
                 }]
             }
@@ -180,14 +180,20 @@ fn claude_hooks() -> Value {
             {
                 "matcher": "",
                 "hooks": [{
-                    "type": "http",
-                    "url": format!("http://{}/hooks/stop", SHELLY_MARKER),
-                    "timeout": 5,
-                    "async": true
+                    "type": "command",
+                    "command": curl_cmd("stop"),
+                    "timeout": 5
                 }]
             }
         ]
     })
+}
+
+fn curl_cmd(endpoint: &str) -> String {
+    format!(
+        "curl -s -X POST http://{}/hooks/{} -H 'Content-Type: application/json' -d @-",
+        SHELLY_MARKER, endpoint
+    )
 }
 
 fn bridge_cmd(agent: &str, endpoint: &str) -> String {
@@ -509,8 +515,8 @@ pub fn add_allow_rule(tool_name: &str) {
         entries.push(serde_json::json!({
             "matcher": tool_name,
             "hooks": [{
-                "type": "http",
-                "url": format!("http://{}/hooks/auto-allow", SHELLY_MARKER),
+                "type": "command",
+                "command": curl_cmd("auto-allow"),
                 "timeout": 5
             }]
         }));
@@ -835,7 +841,19 @@ mod tests {
         assert!(result["hooks"]["PreToolUse"].as_array().unwrap().len() > 0);
     }
 
-    // --- Claude hook timeouts ---
+    // --- Claude hook definitions ---
+
+    #[test]
+    fn claude_hooks_use_curl_command_type() {
+        let hooks = claude_hooks();
+        for event in &["PreToolUse", "Notification", "PermissionRequest", "Stop"] {
+            let hook = &hooks[event][0]["hooks"][0];
+            assert_eq!(hook["type"], "command", "{} should use command type", event);
+            let cmd = hook["command"].as_str().unwrap();
+            assert!(cmd.contains("curl"), "{} command should use curl", event);
+            assert!(cmd.contains("localhost:21517"), "{} command should target localhost:21517", event);
+        }
+    }
 
     #[test]
     fn claude_permission_timeout_is_300s() {
@@ -852,10 +870,18 @@ mod tests {
     }
 
     #[test]
-    fn claude_notification_is_async_5s() {
+    fn claude_notification_timeout_is_5s() {
         let hooks = claude_hooks();
         let hook = &hooks["Notification"][0]["hooks"][0];
         assert_eq!(hook["timeout"].as_u64().unwrap(), 5);
-        assert_eq!(hook["async"].as_bool().unwrap(), true);
+    }
+
+    #[test]
+    fn curl_command_hook_detected_as_shelly() {
+        let entry = serde_json::json!({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "curl -s -X POST http://localhost:21517/hooks/permission -H 'Content-Type: application/json' -d @-"}]
+        });
+        assert!(is_shelly_hook(&entry));
     }
 }
