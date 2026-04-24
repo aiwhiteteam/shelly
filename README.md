@@ -4,6 +4,8 @@ Shelly is a free macOS app that can monitor and auto approve all claude code ses
 
 Built with Tauri 2 and Rust. Under 15MB, minimal RAM, instant startup.
 
+**[⬇ Download Shelly for macOS (Apple Silicon)](https://github.com/aiwhiteteam/shelly/releases/latest/download/Shelly_1.2.2_aarch64.dmg)**
+
 <p align="center">
   <img src="assets/demo.png" alt="Shelly — floating overlay for AI coding agents" width="720" />
 </p>
