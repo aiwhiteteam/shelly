@@ -30,6 +30,70 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 TAURI_CONF="$PROJECT_DIR/src-tauri/tauri.conf.json"
+SECRETS_FILE="/Users/johnny/Desktop/Files/secrets/apple_id_password.txt"
+P12_FILE="/Users/johnny/Desktop/Files/secrets/cert_p12.p12"
+BUILD_KEYCHAIN="$HOME/Library/Keychains/shelly-build.keychain-db"
+TAURI_PRIVATE_KEY_PATH="${TAURI_PRIVATE_KEY_PATH:-$HOME/.tauri-keys/shelly.key}"
+
+load_release_env() {
+  if [ -f "$SECRETS_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$SECRETS_FILE"
+    set +a
+  fi
+
+  if [ -n "$APPLE_ID_PASSWORD" ] && [ -z "$APPLE_PASSWORD" ]; then
+    export APPLE_PASSWORD="$APPLE_ID_PASSWORD"
+  fi
+
+  if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -f "$TAURI_PRIVATE_KEY_PATH" ]; then
+    export TAURI_SIGNING_PRIVATE_KEY="$(cat "$TAURI_PRIVATE_KEY_PATH")"
+  fi
+
+  if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ] && [ -n "${TAURI_PRIVATE_KEY_PASSWORD:-}" ]; then
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$TAURI_PRIVATE_KEY_PASSWORD"
+  fi
+
+  if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+  fi
+}
+
+require_env() {
+  local name="$1"
+  if [ -z "${!name}" ]; then
+    echo "ERROR: $name is not set."
+    exit 1
+  fi
+}
+
+setup_build_keychain() {
+  if [ ! -f "$P12_FILE" ]; then
+    echo "ERROR: Developer ID certificate export not found at $P12_FILE"
+    exit 1
+  fi
+
+  security delete-keychain "$BUILD_KEYCHAIN" 2>/dev/null || true
+  security create-keychain -p '' "$BUILD_KEYCHAIN"
+  security unlock-keychain -p '' "$BUILD_KEYCHAIN"
+  security import "$P12_FILE" -k "$BUILD_KEYCHAIN" -P '' -A -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+  security list-keychains -d user -s "$BUILD_KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k '' "$BUILD_KEYCHAIN" >/dev/null
+}
+
+verify_release_signing() {
+  local app="$1"
+  local dmg="$2"
+
+  echo "Verifying signed artifacts..."
+  codesign --verify --deep --strict --verbose=2 "$app"
+  spctl -a -vvv --type exec "$app"
+  codesign -dv --verbose=4 "$dmg" >/dev/null 2>&1
+  spctl -a -vvv --type open "$dmg"
+}
+
+load_release_env
 
 # Get version
 if [ -n "$1" ]; then
@@ -48,10 +112,16 @@ fi
 echo "Publishing Shelly v$VERSION"
 echo "──────────────────────────────"
 
-# Verify signing key is set
-if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-  echo "ERROR: TAURI_SIGNING_PRIVATE_KEY is not set."
-  echo "Run: export TAURI_SIGNING_PRIVATE_KEY=\$(cat ~/.tauri-keys/shelly.key)"
+# Verify signing + notarization env
+require_env TAURI_SIGNING_PRIVATE_KEY
+require_env APPLE_SIGNING_IDENTITY
+require_env APPLE_ID
+require_env APPLE_PASSWORD
+require_env APPLE_TEAM_ID
+
+setup_build_keychain
+if ! security find-identity -v -p codesigning "$BUILD_KEYCHAIN" | grep -F "$APPLE_SIGNING_IDENTITY" >/dev/null; then
+  echo "ERROR: Expected signing identity not available: $APPLE_SIGNING_IDENTITY"
   exit 1
 fi
 
@@ -67,11 +137,13 @@ cargo tauri build
 # Find build artifacts
 BUNDLE_DIR="$PROJECT_DIR/src-tauri/target/release/bundle"
 DMG=$(find "$BUNDLE_DIR/dmg" -name "*.dmg" | head -1)
+APP=$(find "$BUNDLE_DIR/macos" -name "*.app" -maxdepth 1 | head -1)
 APP_TAR_GZ=$(find "$BUNDLE_DIR/macos" -name "*.app.tar.gz" | head -1)
 APP_TAR_GZ_SIG=$(find "$BUNDLE_DIR/macos" -name "*.app.tar.gz.sig" | head -1)
 
-if [ -z "$DMG" ] || [ -z "$APP_TAR_GZ" ] || [ -z "$APP_TAR_GZ_SIG" ]; then
+if [ -z "$DMG" ] || [ -z "$APP" ] || [ -z "$APP_TAR_GZ" ] || [ -z "$APP_TAR_GZ_SIG" ]; then
   echo "ERROR: Build artifacts not found."
+  echo "  APP: $APP"
   echo "  DMG: $DMG"
   echo "  TAR.GZ: $APP_TAR_GZ"
   echo "  SIG: $APP_TAR_GZ_SIG"
@@ -82,6 +154,8 @@ echo "Build artifacts:"
 echo "  DMG: $DMG"
 echo "  TAR.GZ: $APP_TAR_GZ"
 echo "  SIG: $APP_TAR_GZ_SIG"
+
+verify_release_signing "$APP" "$DMG"
 
 # Read signature
 SIGNATURE=$(cat "$APP_TAR_GZ_SIG")
